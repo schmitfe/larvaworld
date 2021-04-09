@@ -3,6 +3,7 @@ from scipy import signal
 from scipy.stats import lognorm, rv_discrete
 
 import lib.aux.sampling as sampling
+import itertools
 
 
 class Effector:
@@ -801,16 +802,55 @@ class RLmemory :
         self.dt=dt
         self.odor_ids=odor_ids
         self.k=k
+        self.actions=[ii for ii in itertools.product([-1,0,1], repeat=len(odor_ids))]
+        self.state_spacePerOdor=3
+        self.state_space=np.array([ii for ii in itertools.product(range(self.state_spacePerOdor), repeat=len(odor_ids))])
+        #self.q_table = [np.zeros(len(self.state_space), len(self.actions)) for ii in odor_ids]
+        self.q_table = np.zeros(self.state_space.shape[0],len(self.actions))
+        self.lastAction=0
+        self.lastState=0
+
+    def state_collapse(self, dCon):
+        DeltadCon=0.1
+        for ii, dConI in enumerate(dCon):
+            stateV[ii]=self.actions[int(np.sign(dConI)*(np.abs(dConI)>DeltadCon)+1)]
+        state=np.where((self.state_space == stateV).all(axis=1))[0][0]
+        
+        return state
+
 
     def step(self, gain, dCon, reward):
-        for id in self.odor_ids :
-            if reward :
-                print('xx')
-                gain[id]*=1.1
-            else :
-                gain[id]*=0.99
-            # d=dCon[id]
-        return gain
+
+
+        # Hyperparameters
+        alpha = 0.1
+        gamma = 0.6
+        epsilon = 0.1
+        state = self.state_collapse(dCon)
+
+        if random.uniform(0, 1) < epsilon:
+            action = np.random.choice(self.actions)
+        else:
+            action = np.argmax(q_table[state]) # Exploit learned values
+
+        old_value = q_table[self.lastState, self.lastAction]
+        next_max = np.max(q_table[state])
+        
+        new_value = (1 - alpha) * old_value + alpha * (reward + gamma * next_max)
+        q_table[state, action] = new_value
+
+        self.lastAction=action
+        self.lastState=state
+
+        #for id in self.odor_ids :
+        #    if reward :
+        #        print('xx')
+        #        gain[id]*=1.1
+        #    else :
+        #        gain[id]*=0.99
+        #    # d=dCon[id]
+        #return gain
+        return list(action)
 
 
 
