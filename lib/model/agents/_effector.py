@@ -4,6 +4,7 @@ from scipy.stats import lognorm, rv_discrete
 
 import lib.aux.sampling as sampling
 import itertools
+import random
 
 
 class Effector:
@@ -802,55 +803,80 @@ class RLmemory :
         self.dt=dt
         self.odor_ids=odor_ids
         self.k=k
-        self.actions=[ii for ii in itertools.product([-1,0,1], repeat=len(odor_ids))]
-        self.state_spacePerOdor=3
-        self.state_space=np.array([ii for ii in itertools.product(range(self.state_spacePerOdor), repeat=len(odor_ids))])
+        self.actions=[ii for ii in itertools.product([-500,-50, 50 ,500], repeat=len(odor_ids))]
+        self.state_spacePerOdorSide=3
+        self.state_space=np.array([ii for ii in itertools.product(range(2*self.state_spacePerOdorSide+1), repeat=len(odor_ids))])
         #self.q_table = [np.zeros(len(self.state_space), len(self.actions)) for ii in odor_ids]
-        self.q_table = np.zeros(self.state_space.shape[0],len(self.actions))
+        self.q_table = np.zeros((self.state_space.shape[0],len(self.actions)))
         self.lastAction=0
         self.lastState=0
+        self.iterator=2000
+        self.rewardSum=0
 
     def state_collapse(self, dCon):
-        DeltadCon=0.1
-        for ii, dConI in enumerate(dCon):
-            stateV[ii]=self.actions[int(np.sign(dConI)*(np.abs(dConI)>DeltadCon)+1)]
+        DeltadCon=0.02
+        if len(dCon)==1:
+            dCon=[dCon]
+        stateV=[]
+        for index in range(len(dCon)):            
+            for i in dCon[index] :             
+                dConI=dCon[index][i]
+                stateIntermitt=np.zeros(self.state_spacePerOdorSide)
+                for ii in range(self.state_spacePerOdorSide):
+                    stateIntermitt[ii]=np.abs(dConI)>(ii+1)*DeltadCon
+               
+            stateV.append(int(np.sign(dConI)*(np.sum(stateIntermitt))+self.state_spacePerOdorSide))
         state=np.where((self.state_space == stateV).all(axis=1))[0][0]
-        
         return state
 
 
     def step(self, gain, dCon, reward):
-
-
-        # Hyperparameters
-        alpha = 0.1
-        gamma = 0.6
-        epsilon = 0.1
-        state = self.state_collapse(dCon)
-
-        if random.uniform(0, 1) < epsilon:
-            action = np.random.choice(self.actions)
-        else:
-            action = np.argmax(q_table[state]) # Exploit learned values
-
-        old_value = q_table[self.lastState, self.lastAction]
-        next_max = np.max(q_table[state])
         
-        new_value = (1 - alpha) * old_value + alpha * (reward + gamma * next_max)
-        q_table[state, action] = new_value
+        
+        # Hyperparameters
+        alpha = 0.05
+        gamma = 0.6
+        epsilon = 0.15 #0.1
+        self.rewardSum+=int(reward)-0.001
+        if self.iterator>=100:
+            self.iterator=0
+            state = self.state_collapse(dCon)
 
-        self.lastAction=action
-        self.lastState=state
+            if random.uniform(0, 1) < epsilon:
+                actionID = random.randrange(len(self.actions))
+            else:
+                actionID = np.argmax(self.q_table[state]) # Exploit learned values
 
-        #for id in self.odor_ids :
-        #    if reward :
-        #        print('xx')
-        #        gain[id]*=1.1
-        #    else :
-        #        gain[id]*=0.99
-        #    # d=dCon[id]
-        #return gain
-        return list(action)
+            old_value = self.q_table[self.lastState, self.lastAction]
+            next_max = np.max(self.q_table[state])
+            
+            new_value = (1 - alpha) * old_value + alpha * (self.rewardSum + gamma * next_max)
+            print(self.rewardSum)
+            self.rewardSum=0
+
+            self.q_table[state, actionID] = new_value
+
+            self.lastAction=actionID
+            self.lastState=state
+
+            #for id in self.odor_ids :
+            #    if reward :
+            #        print('xx')
+            #        gain[id]*=1.1
+            #    else :
+            #        gain[id]*=0.99
+            #    # d=dCon[id]
+            #return gain
+            action=self.actions[actionID]
+            for ii,id in enumerate(self.odor_ids) :
+                gain[id]=action[ii]
+            
+            print('------------------------------')
+            print(dCon)
+            print(gain)
+            print(self.q_table)
+        self.iterator+=1
+        return gain
 
 
 
